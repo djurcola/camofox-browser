@@ -75,6 +75,27 @@ describe('vnc watcher helpers', () => {
     expect(shell('display_for_xvfb_pid "$2" "$3" "$4" "$5"', ['222', root, sockets, procRoot])).toBe(':7');
   });
 
+  test('prefers a live procfs-owned socket over a stale lock with a reused PID', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'camofox-vnc-test-'));
+    tempDirs.push(root);
+    const sockets = path.join(root, '.X11-unix');
+    const procRoot = path.join(root, 'proc');
+    const fdDir = path.join(procRoot, '222', 'fd');
+    fs.mkdirSync(sockets);
+    fs.mkdirSync(fdDir, { recursive: true });
+    fs.mkdirSync(path.join(procRoot, 'net'));
+    fs.writeFileSync(path.join(root, '.X1-lock'), '222\n');
+    await unixSocket(path.join(sockets, 'X1'));
+    await unixSocket(path.join(sockets, 'X7'));
+    fs.symlinkSync('socket:[98765]', path.join(fdDir, '5'));
+    fs.writeFileSync(
+      path.join(procRoot, 'net', 'unix'),
+      `Num RefCount Protocol Flags Type St Inode Path\n000: 2 0 00010000 1 01 98765 ${sockets}/X7\n`,
+    );
+
+    expect(shell('display_for_xvfb_pid "$2" "$3" "$4" "$5"', ['222', root, sockets, procRoot])).toBe(':7');
+  });
+
   test('rejects another process lock and non-socket files', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'camofox-vnc-test-'));
     tempDirs.push(root);

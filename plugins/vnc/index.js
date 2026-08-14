@@ -47,6 +47,71 @@
 import { resolveVncConfig, startWatcher } from './vnc-launcher.js';
 import { requireAuth } from '../../lib/auth.js';
 
+const CAMOU_CONFIG_CHUNK_SIZE = 32767;
+const CAMOU_CONFIG_KEY = /^CAMOU_CONFIG_(\d+)$/;
+
+function parseDisplayGeometry(resolution) {
+  const match = /^(\d+)x(\d+)(?:x(\d+))?$/.exec(String(resolution));
+  if (!match) return null;
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  const depth = Number(match[3] || 24);
+  if (
+    !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || !Number.isSafeInteger(depth)
+    || width < 100 || height < 100 || width > 10000 || height > 10000 || depth < 1 || depth > 64
+  ) return null;
+
+  return { width, height, depth };
+}
+
+/**
+ * Camoufox generates its browser fingerprint after the VNC plugin has fixed the
+ * Xvfb display. Without this adjustment the generated outer window can be
+ * larger or smaller than the VNC desktop, resulting in clipping or blank space.
+ */
+function matchBrowserWindowToDisplay(options, resolution) {
+  const geometry = parseDisplayGeometry(resolution);
+  const env = options?.env;
+  if (!geometry || !env || typeof env !== 'object') return null;
+
+  const configKeys = Object.keys(env)
+    .map((key) => ({ key, index: Number(CAMOU_CONFIG_KEY.exec(key)?.[1]) }))
+    .filter(({ index }) => Number.isSafeInteger(index))
+    .sort((a, b) => a.index - b.index);
+  if (configKeys.length === 0) return null;
+
+  try {
+    const camoufoxConfig = JSON.parse(configKeys.map(({ key }) => env[key]).join(''));
+    if (!camoufoxConfig || typeof camoufoxConfig !== 'object' || Array.isArray(camoufoxConfig)) return null;
+
+    const { width, height, depth } = geometry;
+    Object.assign(camoufoxConfig, {
+      'screen.width': width,
+      'screen.height': height,
+      'screen.availWidth': width,
+      'screen.availHeight': height,
+      'screen.availTop': 0,
+      'screen.availLeft': 0,
+      'screen.colorDepth': depth,
+      'screen.pixelDepth': depth,
+      'window.outerWidth': width,
+      'window.outerHeight': height,
+      'window.screenX': 0,
+      'window.screenY': 0,
+    });
+
+    for (const { key } of configKeys) delete env[key];
+    const encoded = JSON.stringify(camoufoxConfig);
+    for (let offset = 0, index = 1; offset < encoded.length; offset += CAMOU_CONFIG_CHUNK_SIZE, index += 1) {
+      env[`CAMOU_CONFIG_${index}`] = encoded.slice(offset, offset + CAMOU_CONFIG_CHUNK_SIZE);
+    }
+    return geometry;
+  } catch {
+    return null;
+  }
+}
+
 export async function register(app, ctx, pluginConfig = {}) {
   const { events, config, log, sessions, VirtualDisplay, safeError } = ctx;
 
@@ -76,6 +141,17 @@ export async function register(app, ctx, pluginConfig = {}) {
 
   ctx.createVirtualDisplay = () => new VncVirtualDisplay();
   log('info', 'vnc plugin: overriding Xvfb resolution', { resolution });
+
+  if (vncConfig.matchWindowToDisplay) {
+    events.on('browser:launching', ({ options }) => {
+      const geometry = matchBrowserWindowToDisplay(options, resolution);
+      if (geometry) {
+        log('info', 'vnc plugin: matched browser geometry to virtual display', geometry);
+      } else {
+        log('warn', 'vnc plugin: could not match browser geometry to virtual display');
+      }
+    });
+  }
 
   // --- VNC watcher process ---
   log('info', 'vnc plugin enabled', {

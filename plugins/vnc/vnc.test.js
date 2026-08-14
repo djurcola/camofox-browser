@@ -20,6 +20,7 @@ const mockResolveVncConfig = jest.fn((pluginConfig = {}) => ({
     : '1920x1080x24',
   vncPassword: pluginConfig.password || '',
   viewOnly: pluginConfig.viewOnly || false,
+  matchWindowToDisplay: pluginConfig.matchWindowToDisplay === true,
   vncPort: pluginConfig.vncPort || '5900',
   novncPort: pluginConfig.novncPort || '6080',
 }));
@@ -71,6 +72,7 @@ describe('vnc plugin', () => {
         : '1920x1080x24',
       vncPassword: pluginConfig.password || '',
       viewOnly: pluginConfig.viewOnly || false,
+      matchWindowToDisplay: pluginConfig.matchWindowToDisplay === true,
       vncPort: pluginConfig.vncPort || '5900',
       novncPort: pluginConfig.novncPort || '6080',
     }));
@@ -159,6 +161,51 @@ describe('vnc plugin', () => {
     const args = vd.xvfb_args;
     const screenIdx = args.indexOf('0');
     expect(args[screenIdx + 1]).toBe('1920x1080x32');
+  });
+
+  test('matches generated browser geometry to the VNC display when configured', async () => {
+    await register(mockApp, ctx, {
+      enabled: true,
+      resolution: '1280x1024',
+      matchWindowToDisplay: true,
+    });
+    const options = {
+      env: {
+        CAMOU_CONFIG_1: JSON.stringify({
+          'screen.width': 1920,
+          'screen.height': 1200,
+          'screen.availWidth': 1920,
+          'screen.availHeight': 1160,
+          'screen.colorDepth': 32,
+          'screen.pixelDepth': 32,
+          'window.outerWidth': 1920,
+          'window.outerHeight': 1168,
+          'window.screenX': 200,
+          'window.screenY': 16,
+          'navigator.userAgent': 'retained',
+        }),
+        UNRELATED_ENV: 'retained',
+      },
+    };
+
+    await events.emitAsync('browser:launching', { options });
+
+    expect(options.env.UNRELATED_ENV).toBe('retained');
+    expect(JSON.parse(options.env.CAMOU_CONFIG_1)).toMatchObject({
+      'screen.width': 1280,
+      'screen.height': 1024,
+      'screen.availWidth': 1280,
+      'screen.availHeight': 1024,
+      'screen.availTop': 0,
+      'screen.availLeft': 0,
+      'screen.colorDepth': 24,
+      'screen.pixelDepth': 24,
+      'window.outerWidth': 1280,
+      'window.outerHeight': 1024,
+      'window.screenX': 0,
+      'window.screenY': 0,
+      'navigator.userAgent': 'retained',
+    });
   });
 
   test('storage_state endpoint returns 404 for unknown user', async () => {

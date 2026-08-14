@@ -663,7 +663,10 @@ Browser behavior can be tuned in `camofox.config.json`:
 | `CAMOFOX_CRASH_REPORT_REPO` | GitHub repo for telemetry issues | `jo-inc/camofox-browser` |
 | `CAMOFOX_CRASH_REPORT_RATE_LIMIT` | Max telemetry reports per hour | `10` |
 | `ENABLE_VNC` | Enable VNC plugin for interactive browser access (`1`) | - |
+| `VNC_RESOLUTION` | Xvfb screen resolution | `1920x1080` |
+| `VNC_MATCH_WINDOW_TO_DISPLAY` | Align browser window and screen fingerprint to the VNC display (`1`) | - |
 | `VNC_PASSWORD` | Password for VNC access (recommended in production) | - |
+| `VIEW_ONLY` | Disable VNC keyboard/mouse input (`1`) | - |
 | `NOVNC_PORT` | noVNC web UI port | `6080` |
 
 ## Architecture

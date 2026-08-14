@@ -38,6 +38,7 @@ docker run -p 9377:9377 -p 6080:6080 \
     "vnc": {
       "enabled": true,
       "resolution": "1920x1080",
+      "matchWindowToDisplay": true,
       "password": "optional-secret",
       "viewOnly": false,
       "novncPort": 6080
@@ -144,17 +145,21 @@ Export the full Playwright storage state (cookies + localStorage origins) for a 
 | env | `ENABLE_VNC` | Enable the plugin (`1`) | off |
 | env | `VNC_PASSWORD` | x11vnc password | none (open) |
 | env | `VNC_RESOLUTION` | Xvfb screen resolution | `1920x1080` |
+| env | `VNC_MATCH_WINDOW_TO_DISPLAY` | Align Camoufox outer window and screen fingerprint to the VNC display (`1`) | off |
 | env | `VIEW_ONLY` | Disable mouse/keyboard input (`1`) | off |
 | env | `VNC_PORT` | x11vnc listen port | `5900` |
 | env | `NOVNC_PORT` | noVNC web UI port | `6080` |
 | config | `plugins.vnc.enabled` | Enable the plugin | `false` |
 | config | `plugins.vnc.password` | x11vnc password | none |
 | config | `plugins.vnc.resolution` | Xvfb screen resolution | `1920x1080` |
+| config | `plugins.vnc.matchWindowToDisplay` | Align Camoufox outer window and screen fingerprint to the VNC display; use for human handoff | `false` |
 | config | `plugins.vnc.viewOnly` | View-only mode | `false` |
 | config | `plugins.vnc.vncPort` | x11vnc listen port | `5900` |
 | config | `plugins.vnc.novncPort` | noVNC web UI port | `6080` |
 
 Environment variables override config file values.
+
+`matchWindowToDisplay` rewrites only the generated screen/window geometry at browser launch so it matches the Xvfb/noVNC canvas; the remaining Camoufox fingerprint fields remain generated per launch. It improves interactive handoff reliability at the cost of fixed display geometry, so enable it deliberately for human VNC use.
 
 ## Security
 

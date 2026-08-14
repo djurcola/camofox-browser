@@ -37,10 +37,12 @@ export function resolveVncConfig(pluginConfig = {}, env = process.env) {
 
   const vncPassword = env.VNC_PASSWORD || pluginConfig.password || '';
   const viewOnly = envFlagEnabled(env.VIEW_ONLY) || pluginConfig.viewOnly === true;
+  const matchWindowToDisplay = envFlagEnabled(env.VNC_MATCH_WINDOW_TO_DISPLAY)
+    || pluginConfig.matchWindowToDisplay === true;
   const vncPort = env.VNC_PORT || pluginConfig.vncPort || '5900';
   const novncPort = env.NOVNC_PORT || pluginConfig.novncPort || '6080';
 
-  return { enabled, resolution, vncPassword, viewOnly, vncPort, novncPort };
+  return { enabled, resolution, vncPassword, viewOnly, matchWindowToDisplay, vncPort, novncPort };
 }
 
 export function buildWatcherEnv({ resolution, vncPassword, viewOnly, vncPort, novncPort, statusFile }, env = process.env) {

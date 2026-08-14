@@ -82,6 +82,14 @@ describe('loadConfig', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  test('forwards VNC display matching to server subprocesses', () => {
+    process.env.VNC_MATCH_WINDOW_TO_DISPLAY = '1';
+
+    const config = loadConfig();
+
+    expect(config.serverEnv.VNC_MATCH_WINDOW_TO_DISPLAY).toBe('1');
+  });
+
   test('disables default addons when CAMOFOX_DISABLE_DEFAULT_ADDONS is set', () => {
     delete process.env.CAMOFOX_DISABLE_DEFAULT_ADDONS;
     expect(loadConfig().disableDefaultAddons).toBe(false);
