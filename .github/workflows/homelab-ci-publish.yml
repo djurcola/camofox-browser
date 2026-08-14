@@ -251,16 +251,18 @@ jobs:
           [[ "$actual_version" == "$EXPECTED_VERSION" ]]
           docker exec camofox-smoke test -f /app/mcp/lib/cookies.mjs
           docker exec camofox-smoke test -f /app/mcp/lib/tool-contracts.mjs
-          curl -fsS --max-time 10 http://127.0.0.1:16080/vnc.html >/dev/null
-          curl -fsS --max-time 10 http://127.0.0.1:19377/vnc/status > "$RUNNER_TEMP/vnc-status.json"
-          python3 - "$RUNNER_TEMP/vnc-status.json" <<'PY'
+
+          check_vnc() {
+            curl -fsS --max-time 10 http://127.0.0.1:16080/vnc.html >/dev/null || return 1
+            curl -fsS --max-time 10 http://127.0.0.1:19377/vnc/status > "$RUNNER_TEMP/vnc-status.json" || return 1
+            python3 - "$RUNNER_TEMP/vnc-status.json" <<'PY' || return 1
           import json, sys
           with open(sys.argv[1], encoding='utf-8') as fh:
               status = json.load(fh)
           assert status.get('enabled') is True, status
           assert status.get('watcherRunning') is True, status
           PY
-          python3 - <<'PY'
+            python3 - <<'PY' || return 1
           import base64, os, socket
           key = base64.b64encode(os.urandom(16)).decode()
           request = (
@@ -276,6 +278,20 @@ jobs:
               response = sock.recv(4096).decode('latin1', errors='replace')
           assert response.startswith('HTTP/1.1 101'), response
           PY
+          }
+
+          vnc_ready=false
+          for _ in $(seq 1 15); do
+            if check_vnc; then
+              vnc_ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$vnc_ready" != true ]]; then
+            docker logs camofox-smoke
+            exit 1
+          fi
           logs=$(docker logs camofox-smoke 2>&1)
           grep -Eiq 'plugin loaded.*persistence|persistence.*plugin loaded' <<<"$logs"
           grep -Eiq 'plugin loaded.*youtube|youtube.*plugin loaded' <<<"$logs"
