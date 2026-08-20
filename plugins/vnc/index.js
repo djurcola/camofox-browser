@@ -46,6 +46,7 @@
 
 import { resolveVncConfig, startWatcher } from './vnc-launcher.js';
 import { requireAuth } from '../../lib/auth.js';
+import { removeXvfbDisplayFiles } from '../../lib/tmp-cleanup.js';
 
 const CAMOU_CONFIG_CHUNK_SIZE = 32767;
 const CAMOU_CONFIG_KEY = /^CAMOU_CONFIG_(\d+)$/;
@@ -136,6 +137,17 @@ export async function register(app, ctx, pluginConfig = {}) {
         return patched;
       }
       return args;
+    }
+
+    kill() {
+      const proc = this.proc;
+      if (!proc || this.xvfbDisplayFilesCleanupRegistered) return super.kill();
+
+      this.xvfbDisplayFilesCleanupRegistered = true;
+      const cleanup = () => removeXvfbDisplayFiles(this.display);
+      if (proc.exitCode === null) proc.once('exit', cleanup);
+      else cleanup();
+      return super.kill();
     }
   }
 

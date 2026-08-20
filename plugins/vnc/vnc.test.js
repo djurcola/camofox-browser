@@ -30,6 +30,11 @@ jest.unstable_mockModule('./vnc-launcher.js', () => ({
   startWatcher: mockStartWatcher,
 }));
 
+const mockRemoveXvfbDisplayFiles = jest.fn();
+jest.unstable_mockModule('../../lib/tmp-cleanup.js', () => ({
+  removeXvfbDisplayFiles: mockRemoveXvfbDisplayFiles,
+}));
+
 // Mock auth middleware
 jest.unstable_mockModule('../../lib/auth.js', () => ({
   requireAuth: () => (_req, _res, next) => next(),
@@ -37,8 +42,21 @@ jest.unstable_mockModule('../../lib/auth.js', () => ({
 
 // Minimal VirtualDisplay mock (real class has side-effects that break in test)
 class MockVirtualDisplay {
+  constructor() {
+    this.proc = null;
+    this._display = 99;
+  }
+
+  get display() {
+    return this._display;
+  }
+
   get xvfb_args() {
     return ['-screen', '0', '1x1x24', '-ac', '-nolisten', 'tcp'];
+  }
+
+  kill() {
+    if (this.proc && !this.proc.killed) this.proc.kill();
   }
 }
 
@@ -65,6 +83,7 @@ describe('vnc plugin', () => {
     mockStartWatcher.mockClear();
     mockStartWatcher.mockImplementation(mockWatcher);
     mockResolveVncConfig.mockClear();
+    mockRemoveXvfbDisplayFiles.mockClear();
     mockResolveVncConfig.mockImplementation((pluginConfig = {}) => ({
       enabled: pluginConfig.enabled || false,
       resolution: pluginConfig.resolution
@@ -206,6 +225,24 @@ describe('vnc plugin', () => {
       'window.screenY': 0,
       'navigator.userAgent': 'retained',
     });
+  });
+
+  test('removes display files only after its Xvfb process exits', async () => {
+    await register(mockApp, ctx, { enabled: true });
+    const display = ctx.createVirtualDisplay();
+    const proc = new EventEmitter();
+    proc.exitCode = null;
+    proc.killed = false;
+    proc.kill = jest.fn(() => { proc.killed = true; });
+    display.proc = proc;
+
+    display.kill();
+
+    expect(proc.kill).toHaveBeenCalled();
+    expect(mockRemoveXvfbDisplayFiles).not.toHaveBeenCalled();
+    proc.exitCode = 0;
+    proc.emit('exit');
+    expect(mockRemoveXvfbDisplayFiles).toHaveBeenCalledWith(99);
   });
 
   test('storage_state endpoint returns 404 for unknown user', async () => {
