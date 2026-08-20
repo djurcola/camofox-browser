@@ -43,12 +43,6 @@ interface ToolResult {
   content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 }
 
-interface HealthCheckResult {
-  status: "ok" | "warn" | "error";
-  message?: string;
-  details?: Record<string, unknown>;
-}
-
 interface CliCommand {
   description: (desc: string) => CliCommand;
   option: (flags: string, desc: string, defaultValue?: string) => CliCommand;
@@ -82,6 +76,10 @@ type ToolDefinition = {
 
 type ToolFactory = (ctx: ToolContext) => ToolDefinition | ToolDefinition[] | null | undefined;
 
+type GatewayMethodContext = {
+  respond: (ok: boolean, payload?: unknown, error?: unknown) => void;
+};
+
 interface PluginApi {
   registerTool: (
     tool: ToolDefinition | ToolFactory,
@@ -96,13 +94,10 @@ interface PluginApi {
     registrar: (ctx: CliContext) => void | Promise<void>,
     opts?: { commands?: string[] }
   ) => void;
-  registerRpc?: (
+  registerGatewayMethod?: (
     name: string,
-    handler: (params: Record<string, unknown>) => Promise<unknown>
-  ) => void;
-  registerHealthCheck?: (
-    name: string,
-    check: () => Promise<HealthCheckResult>
+    handler: (ctx: GatewayMethodContext) => Promise<void>,
+    options?: { scope?: "operator.read" | "operator.write" }
   ) => void;
   config: Record<string, unknown>;
   pluginConfig?: PluginConfig;
@@ -286,62 +281,27 @@ export default function register(api: PluginApi) {
     },
   });
 
-  // Register health check for openclaw doctor/status
-  if (api.registerHealthCheck) {
-    api.registerHealthCheck("camofox-browser", async () => {
-      try {
-        const health = (await fetchApi(baseUrl, "/health")) as {
-          status: string;
-          engine?: string;
-          activeTabs?: number;
-        };
-        return {
-          status: "ok",
-          message: `Server running (${health.engine || "camoufox"})`,
-          details: {
-            url: baseUrl,
-            engine: health.engine,
-            activeTabs: health.activeTabs,
-            managed: serverProcess !== null,
-          },
-        };
-      } catch {
-        return {
-          status: serverProcess ? "warn" : "error",
-          message: serverProcess
-            ? "Server starting..."
-            : `Server not reachable at ${baseUrl}`,
-          details: {
-            url: baseUrl,
-            managed: serverProcess !== null,
-            hint: "Run: openclaw camofox start",
-          },
-        };
-      }
-    });
-  }
-
-  // Register RPC methods for gateway integration
-  if (api.registerRpc) {
-    api.registerRpc("camofox.health", async () => {
+  // Register read-only gateway methods for health/status integration.
+  if (api.registerGatewayMethod) {
+    api.registerGatewayMethod("camofox.health", async ({ respond }) => {
       try {
         const health = (await fetchApi(baseUrl, "/health")) as Record<string, unknown>;
-        return { status: "ok", ...health };
+        respond(true, { status: "ok", ...health });
       } catch (err) {
-        return { status: "error", error: (err as Error).message };
+        respond(true, { status: "error", error: (err as Error).message });
       }
-    });
+    }, { scope: "operator.read" });
 
-    api.registerRpc("camofox.status", async () => {
+    api.registerGatewayMethod("camofox.status", async ({ respond }) => {
       const running = await checkServerRunning(baseUrl);
-      return {
+      respond(true, {
         running,
         managed: serverProcess !== null,
         pid: serverProcess?.pid || null,
         url: baseUrl,
         port,
-      };
-    });
+      });
+    }, { scope: "operator.read" });
   }
 
   // Register CLI subcommands (openclaw camofox ...)
