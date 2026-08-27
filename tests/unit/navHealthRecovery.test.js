@@ -20,6 +20,7 @@ const FAILURE_THRESHOLD = 3;
 
 function createNavHealthTracker() {
   const userNavHealth = new Map();
+  const sessions = new Map();
 
   function normalizeUserId(userId) {
     return String(userId);
@@ -37,6 +38,35 @@ function createNavHealthTracker() {
 
   function deleteUserNavHealth(userId) {
     userNavHealth.delete(normalizeUserId(userId));
+  }
+
+  function getOrCreateSession(userId) {
+    const key = normalizeUserId(userId);
+    const current = sessions.get(key);
+    if (current && !current._closing) return current;
+    // Mirrors getSession(): a new session starts a new failure streak.
+    deleteUserNavHealth(key);
+    const session = { _closing: false };
+    sessions.set(key, session);
+    return session;
+  }
+
+  function closeSession(userId, session) {
+    const key = normalizeUserId(userId);
+    const current = sessions.get(key);
+    // Mirrors closeSession(): do not clear a replacement session's state.
+    if (current === session || !current) {
+      deleteUserNavHealth(key);
+    }
+    // An older asynchronous close must not delete a replacement session or
+    // clear its navigation health.
+    const sessionAfterClose = sessions.get(key);
+    if (sessionAfterClose === session) {
+      sessions.delete(key);
+      deleteUserNavHealth(key);
+    } else if (!sessionAfterClose) {
+      deleteUserNavHealth(key);
+    }
   }
 
   function recordNavSuccess(userId) {
@@ -66,6 +96,9 @@ function createNavHealthTracker() {
     recordNavSuccess,
     recordNavFailure,
     deleteUserNavHealth,
+    getOrCreateSession,
+    closeSession,
+    currentSession: (userId) => sessions.get(normalizeUserId(userId)),
     getFailures,
     totalFailures,
     _map: userNavHealth,
@@ -143,6 +176,34 @@ describe('per-user navigation health tracking', () => {
 
     expect(tracker.getFailures('userA')).toBe(0); // recreated fresh
     expect(tracker.getFailures('userB')).toBe(2); // untouched
+  });
+
+  test('closing a session clears its navigation failure streak', () => {
+    const tracker = createNavHealthTracker();
+    const session = tracker.getOrCreateSession('userA');
+
+    tracker.recordNavFailure('userA');
+    tracker.recordNavFailure('userA');
+    tracker.closeSession('userA', session);
+
+    expect(tracker.totalFailures()).toBe(0);
+    expect(tracker.currentSession('userA')).toBeUndefined();
+  });
+
+  test('a replacement session starts clean and survives an old async close', () => {
+    const tracker = createNavHealthTracker();
+    const oldSession = tracker.getOrCreateSession('userA');
+    tracker.recordNavFailure('userA');
+    oldSession._closing = true;
+
+    const replacement = tracker.getOrCreateSession('userA');
+    expect(tracker.getFailures('userA')).toBe(0);
+
+    tracker.closeSession('userA', oldSession);
+    expect(tracker.currentSession('userA')).toBe(replacement);
+
+    tracker.recordNavFailure('userA');
+    expect(tracker.getFailures('userA')).toBe(1);
   });
 
   test('totalFailures aggregates across all users', () => {

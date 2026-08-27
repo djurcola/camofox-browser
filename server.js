@@ -1253,6 +1253,14 @@ async function closeSession(userId, session, {
 
   const key = normalizeUserId(userId);
 
+  // Navigation health is scoped to a live user session. Clear the old
+  // session's streak before teardown, but never clear a replacement session's
+  // state when an older asynchronous close finishes later.
+  const currentSession = sessions.get(key);
+  if (currentSession === session || !currentSession) {
+    deleteUserNavHealth(key);
+  }
+
   // Drain locks BEFORE closing context — queued operations get clean "Tab destroyed"
   // (410) instead of messy "Target page closed" (500) errors.
   if (clearLocks) {
@@ -1274,7 +1282,18 @@ async function closeSession(userId, session, {
   }
 
   await session.context.close().catch(() => {});
-  sessions.delete(key);
+  // A replacement session may have been installed while this close was
+  // awaiting browser/plugin cleanup. Never delete that newer session or its
+  // navigation health state.
+  const sessionAfterClose = sessions.get(key);
+  if (sessionAfterClose === session) {
+    sessions.delete(key);
+    deleteUserNavHealth(key);
+  } else if (!sessionAfterClose) {
+    // An in-flight request may have recorded another failure after the
+    // teardown began; clear that final stale state too.
+    deleteUserNavHealth(key);
+  }
   await pluginEvents.emitAsync('session:destroyed', { userId: key, reason });
 
   refreshActiveTabsGauge();
@@ -1309,6 +1328,9 @@ async function getSession(userId, { trace = false } = {}) {
   }
   
   if (!session) {
+    // A new session starts a fresh navigation-failure streak. This also
+    // removes state left behind if an older session was reaped or expired.
+    deleteUserNavHealth(key);
     session = await coalesceInflight(sessionCreations, key, async () => {
       if (sessions.size >= MAX_SESSIONS) {
         throw Object.assign(
