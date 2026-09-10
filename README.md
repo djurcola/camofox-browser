@@ -19,6 +19,12 @@
 >
 > Built by the team behind <a href="https://askjo.ai?ref=camofox"><strong>jo, a personal AI agent</strong></a> that runs half on your Mac, half on a dedicated cloud machine just for you -- with zero maintenance needed. Available on macOS, Telegram, WhatsApp, and email. <a href="https://askjo.ai?ref=camofox">Try the beta free -></a>
 
+> <a href="https://x.com/pradeep24"><img src="pradeep-profile.png" alt="Pradeep Elankumaran" width="80" height="80" align="left" /></a>
+>
+> <a href="https://x.com/pradeep24"><strong>Pradeep Elankumaran (@pradeep24)</strong></a> — co-founder and technical CEO at Jo.
+>
+> <br clear="left" />
+
 <br/>
 
 ```bash
@@ -642,7 +648,7 @@ Browser behavior can be tuned in `camofox.config.json`:
 | `CAMOFOX_TRACES_TTL_HOURS` | Traces older than this are swept on startup | `24` |
 | `MAX_SESSIONS` | Max concurrent browser sessions | `50` |
 | `MAX_TABS_PER_SESSION` | Max tabs per session | `10` |
-| `SESSION_TIMEOUT_MS` | Session inactivity timeout | `1800000` (30min) |
+| `SESSION_TIMEOUT_MS` | Session inactivity timeout (0 = never) | `600000` (10min) |
 | `BROWSER_IDLE_TIMEOUT_MS` | Kill browser when idle (0 = never) | `300000` (5min) |
 | `CAMOFOX_INTERACTIVE` | Interactive browser mode: `desktop` opens a real local Camoufox window; `off` keeps normal headless behavior | `off` |
 | `HANDLER_TIMEOUT_MS` | Max time for any handler | `30000` (30s) |

@@ -115,9 +115,10 @@ function matchBrowserWindowToDisplay(options, resolution) {
 
 export async function register(app, ctx, pluginConfig = {}) {
   const { events, config, log, sessions, VirtualDisplay, safeError } = ctx;
+  const settings = ctx.plugin?.settings || pluginConfig;
 
-  // Resolve all config (env vars + pluginConfig) via the launcher module
-  const vncConfig = resolveVncConfig(pluginConfig);
+  // Resolve all config (env vars + plugin settings) via the launcher module
+  const vncConfig = resolveVncConfig(settings);
 
   if (!vncConfig.enabled) {
     log('info', 'vnc plugin: disabled (set ENABLE_VNC=1 or plugins.vnc.enabled=true)');
@@ -151,8 +152,8 @@ export async function register(app, ctx, pluginConfig = {}) {
     }
   }
 
-  ctx.createVirtualDisplay = () => new VncVirtualDisplay();
-  log('info', 'vnc plugin: overriding Xvfb resolution', { resolution });
+  ctx.plugin.registerVirtualDisplayProvider(() => new VncVirtualDisplay());
+  log('info', 'vnc plugin: registered Xvfb display provider', { resolution });
 
   if (vncConfig.matchWindowToDisplay) {
     events.on('browser:launching', ({ options }) => {

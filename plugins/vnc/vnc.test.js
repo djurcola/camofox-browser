@@ -71,6 +71,7 @@ describe('vnc plugin', () => {
     mockApp = {
       get: jest.fn((path, ...handlers) => { routes[`GET ${path}`] = handlers; }),
     };
+    const displayProvider = { create: () => new MockVirtualDisplay() };
     ctx = {
       events,
       config: {},
@@ -78,8 +79,11 @@ describe('vnc plugin', () => {
       sessions: new Map(),
       safeError: (err) => typeof err === 'string' ? err : (err?.message || 'Internal error'),
       VirtualDisplay: MockVirtualDisplay,
-      createVirtualDisplay: () => new MockVirtualDisplay(),
+      plugin: {
+        registerVirtualDisplayProvider: (factory) => { displayProvider.create = factory; },
+      },
     };
+    ctx.createVirtualDisplay = () => displayProvider.create();
     mockStartWatcher.mockClear();
     mockStartWatcher.mockImplementation(mockWatcher);
     mockResolveVncConfig.mockClear();
