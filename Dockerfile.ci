@@ -70,7 +70,10 @@ COPY postinstall.js ./
 COPY scripts/ ./scripts/
 # Build tools are needed when better-sqlite3 has no native prebuild for the target.
 # Trixie's glibc also supports the upstream arm64 prebuild at runtime.
-RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --omit=dev \
+# --ignore-scripts skips the postinstall hook, which imports from lib/camoufox-download.js
+# (not yet copied) and depends on camoufox-js (not yet installed). The Camoufox binary
+# is already downloaded by the earlier RUN step, so the postinstall script is redundant here.
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --omit=dev --ignore-scripts \
     && apt-get purge -y --auto-remove build-essential \
     && rm -rf /var/lib/apt/lists/*
 
