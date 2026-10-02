@@ -679,6 +679,8 @@ Browser behavior can be tuned in `camofox.config.json`:
 | `VNC_MATCH_WINDOW_TO_DISPLAY` | Align browser window and screen fingerprint to the VNC display (`1`) | - |
 | `VNC_PASSWORD` | Password for VNC access (recommended in production) | - |
 | `VIEW_ONLY` | Disable VNC keyboard/mouse input (`1`) | - |
+| `VNC_BIND` | noVNC listen address; set `0.0.0.0` to reach noVNC through a published container port | `127.0.0.1` |
+| `VNC_RFB_BIND` | Native VNC listen address; non-loopback requires `VNC_PASSWORD` and does not change with `VNC_BIND` | `127.0.0.1` |
 | `NOVNC_PORT` | noVNC web UI port | `6080` |
 
 ## Interactive desktop browser
