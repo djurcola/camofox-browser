@@ -186,12 +186,16 @@ jobs:
           set -euo pipefail
           short_sha=${UPSTREAM_SHA:0:12}
           title="Camofox upstream sync blocked: ${short_sha}"
-          existing=$(gh issue list \
+          if ! existing=$(gh issue list \
             --repo "$GITHUB_REPOSITORY" \
             --state open \
             --search "$title in:title" \
             --json number \
-            --jq '.[0].number // empty')
+            --jq '.[0].number // empty'); then
+            printf 'Issue tracking is unavailable; the conflict report artifact and run summary contain the details.\n' \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [[ -n "$existing" ]]; then
             printf 'Using existing tracking issue #%s.\n' "$existing"
             exit 0
@@ -205,7 +209,10 @@ jobs:
             "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             '' \
             'The homelab branch was not changed. Resolve the conflict, close this issue, and rerun the workflow.')
-          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          if ! gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"; then
+            printf 'Issue creation failed; the conflict report artifact and run summary contain the details.\n' \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
   validate:
     name: Validate and publish candidate
