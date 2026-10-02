@@ -19,7 +19,10 @@ jobs:
       contents: write
     outputs:
       changed: ${{ steps.merge.outputs.changed }}
+      blocked: ${{ steps.merge.outputs.blocked }}
       candidate_sha: ${{ steps.merge.outputs.candidate_sha }}
+      upstream_sha: ${{ steps.merge.outputs.upstream_sha }}
+      conflict_files: ${{ steps.merge.outputs.conflict_files }}
     steps:
       - name: Checkout trusted homelab branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,11 +39,55 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git remote remove upstream >/dev/null 2>&1 || true
           git remote add upstream https://github.com/jo-inc/camofox-browser.git
-          git fetch --no-tags upstream refs/heads/master
+          fetch_ok=false
+          for attempt in 1 2 3; do
+            if git fetch --no-tags upstream refs/heads/master; then
+              fetch_ok=true
+              break
+            fi
+            printf 'Upstream fetch attempt %s/3 failed; retrying.\n' "$attempt" >&2
+            sleep $((attempt * 5))
+          done
+          [[ "$fetch_ok" == true ]]
+
+          upstream_sha=$(git rev-parse upstream/master)
+
+          block_sync() {
+            local reason="$1"
+            local conflict_files
+            conflict_files=$(git diff --name-only --diff-filter=U | paste -sd, -)
+            conflict_files=${conflict_files:-none}
+            {
+              printf '# Camofox upstream sync blocked\n\n'
+              printf '%s\n' "Reason: $reason"
+              printf '%s\n' "Upstream commit: $upstream_sha"
+              printf '%s\n\n' "Conflicting paths: $conflict_files"
+              git status --short
+              printf '\n## Combined conflict diff\n\n'
+              git diff --cc || true
+            } | tee "$RUNNER_TEMP/camofox-sync-conflict.md" >&2
+            {
+              printf 'changed=false\n'
+              printf 'blocked=true\n'
+              printf 'candidate_sha=%s\n' "$(git rev-parse HEAD)"
+              printf 'upstream_sha=%s\n' "$upstream_sha"
+              printf 'conflict_files=%s\n' "$conflict_files"
+            } >> "$GITHUB_OUTPUT"
+            {
+              printf '## Upstream sync blocked\n\n'
+              printf '%s\n' "$reason"
+              printf '\nUpstream revision: `%s`\n' "$upstream_sha"
+              printf 'Conflicting paths: `%s`\n' "$conflict_files"
+              printf '\nThe homelab branch was not changed. An issue will be opened or reused for this upstream revision.\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort >/dev/null 2>&1 || true
+          }
 
           if git merge-base --is-ancestor upstream/master HEAD; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'blocked=false' >> "$GITHUB_OUTPUT"
             echo "candidate_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -70,8 +117,8 @@ jobs:
           trusted_status=$(git status --short -- .github)
           if [[ -n "$trusted_status" ]]; then
             printf 'Trusted workflow tree changed unexpectedly:\n%s\n' "$trusted_status" >&2
-            git merge --abort || true
-            exit 1
+            block_sync 'trusted workflow tree changed unexpectedly'
+            exit 0
           fi
 
           # README is documentation, so combine non-overlapping additions from
@@ -86,17 +133,15 @@ jobs:
             git show ':3:README.md' > "$theirs_file"
             cp "$ours_file" README.md
             if ! git merge-file --union README.md "$base_file" "$theirs_file"; then
-              printf 'README union merge failed; refusing to guess:\n' >&2
-              git merge --abort || true
-              exit 1
+              block_sync 'README union merge failed; refusing to guess'
+              exit 0
             fi
             git add README.md
           fi
           unresolved=$(git diff --name-only --diff-filter=U)
           if [[ -n "$unresolved" ]]; then
-            printf 'Unresolved upstream conflicts:\n%s\n' "$unresolved" >&2
-            git merge --abort || true
-            exit 1
+            block_sync "unresolved upstream conflicts: ${unresolved//$'\n'/, }"
+            exit 0
           fi
           if [[ "$merge_rc" -ne 0 ]]; then
             echo 'The only merge conflicts were under .github and were resolved in favor of homelab.'
@@ -110,7 +155,57 @@ jobs:
           git push --force-with-lease origin \
             "$candidate_sha:refs/heads/automation/upstream-sync"
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo 'blocked=false' >> "$GITHUB_OUTPUT"
           echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve merge conflict report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: camofox-upstream-sync-report-${{ github.run_number }}
+          path: ${{ runner.temp }}/camofox-sync-conflict.md
+          if-no-files-found: ignore
+
+  report:
+    name: Report blocked sync
+    if: needs.prepare.outputs.blocked == 'true'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open one issue for the blocked upstream revision
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+          CONFLICT_FILES: ${{ needs.prepare.outputs.conflict_files }}
+        run: |
+          set -euo pipefail
+          short_sha=${UPSTREAM_SHA:0:12}
+          title="Camofox upstream sync blocked: ${short_sha}"
+          existing=$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$title in:title" \
+            --json number \
+            --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            printf 'Using existing tracking issue #%s.\n' "$existing"
+            exit 0
+          fi
+          body=$(printf '%s\n' \
+            'The scheduled Camofox upstream sync is blocked by a merge conflict.' \
+            '' \
+            "Upstream revision: \`${UPSTREAM_SHA}\`" \
+            "Conflicting paths: \`${CONFLICT_FILES}\`" \
+            '' \
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '' \
+            'The homelab branch was not changed. Resolve the conflict, close this issue, and rerun the workflow.')
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
 
   validate:
     name: Validate and publish candidate
